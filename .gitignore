@@ -2,3 +2,8 @@ cache*
 
 *.mp4
 *.Mjpeg
+
+
+__pycache__/
+
+.vscode/
