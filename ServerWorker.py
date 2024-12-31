@@ -42,104 +42,95 @@ class ServerWorker:
                 print("Data received:\n" + data.decode("utf-8"))
                 self.processRtspRequest(data.decode("utf-8"))  #after that we are calling processrtsp request
 
-    def processRtspRequest(self, data):     #we are processing the rtsp request sent by the client
-        """Process RTSP request sent from the client."""  #we will process the request that which type of request is this?
-                                                          #and do further process according to that
-        # Get the request type
+    def processRtspRequest(self, data):
+        """Process RTSP request sent from the client."""
         request = data.split('\n')
         line1 = request[0].split(' ')
         requestType = line1[0]
-
-        # Get the media file name
         filename = line1[1]
-
-        # Get the RTSP sequence number
         seq = request[1].split(' ')
 
-        # Process SETUP request
-        if requestType == self.SETUP:
-            if self.state == self.INIT:
-                # Update state
-                print("processing SETUP\n")
-
-                try:
-                    self.clientInfo['videoStream'] = VideoStream(filename)
-                    self.state = self.READY             #update state to ready state if it is in init state
-                except IOError:
-                    self.replyRtsp(self.FILE_NOT_FOUND_404, seq[1])   
-
-                # Generate a randomized RTSP session ID
-                self.clientInfo['session'] = randint(100000, 999999)
-
-                # Send RTSP reply
-                self.replyRtsp(self.OK_200, seq[1])   #server will reply to that setup request
-
-                # Get the RTP/UDP port from the last line
-                self.clientInfo['rtpPort'] = request[2].split(' ')[3]
-
-        # Process PLAY request
-        elif requestType == self.PLAY:
-            if self.state == self.READY:
-                print("processing PLAY\n")
-                self.state = self.PLAYING      #change state to playing
-
-                # Create a new socket for RTP/UDP
-                self.clientInfo["rtpSocket"] = socket.socket(
-                    socket.AF_INET, socket.SOCK_DGRAM)       #create socket for rtp/udp to sent data from server to client which will use udp protocol
-
-                self.replyRtsp(self.OK_200, seq[1])    #respond to playing request that i have received a request
-
-                # Create a new thread and start sending RTP packets
-                self.clientInfo['event'] = threading.Event()  #create a thread for particular client to send data using rtp protocol
-                self.clientInfo['worker'] = threading.Thread(
-                    target=self.sendRtp)
-                self.clientInfo['worker'].start()   #start thread
-
-        # Process PAUSE request
-        elif requestType == self.PAUSE:
-            if self.state == self.PLAYING:
-                print("processing PAUSE\n")
-                self.state = self.READY    #change state
-
-                self.clientInfo['event'].set()  #stop running thread
-
-                self.replyRtsp(self.OK_200, seq[1])  #respond that i have process pause request 
-
-        # Process TEARDOWN request
-        elif requestType == self.TEARDOWN:
-            print("processing TEARDOWN\n")
-
-            self.clientInfo['event'].set()   #stop the thread
-
-            self.replyRtsp(self.OK_200, seq[1])  #respond that i have process teardown request
-
-            # Close the RTP socket
-            self.clientInfo['rtpSocket'].close()   #close the rtp socket
-        elif requestType == self.SCRUB:
+        # Handle SCRUB request
+        if requestType == self.SCRUB:
             print("processing SCRUB\n")
-            
-            # Get the requested position from the request
-            for line in request:
-                if line.startswith('Position'):
-                    try:
-                        position = float(line.split(':')[1].strip())
+            if self.state in [self.READY, self.PLAYING]:
+                try:
+                    # Extract position from request
+                    position = None
+                    for line in request:
+                        if line.startswith('Position'):
+                            position = float(line.split(':')[1].strip())
+                            break
+                    
+                    if position is not None:
+                        # Calculate target frame
                         total_frames = self.clientInfo['videoStream'].get_total_frames()
                         target_frame = int((position / 100.0) * total_frames)
                         
                         # Pause any current playback
-                        self.clientInfo['event'].set()
+                        if self.state == self.PLAYING:
+                            self.clientInfo['event'].set()
+                            if 'worker' in self.clientInfo and self.clientInfo['worker'].is_alive():
+                                self.clientInfo['worker'].join(timeout=1.0)
                         
                         # Set the video stream to the requested frame
                         if self.clientInfo['videoStream'].set_frame(target_frame):
                             self.replyRtsp(self.OK_200, seq[1])
-                            # Reset the event flag to allow playback to continue
+                            
+                            # Prepare for new playback if needed
                             self.clientInfo['event'].clear()
+                            
+                            # Update state
+                            self.state = self.READY
                         else:
                             self.replyRtsp(self.CON_ERR_500, seq[1])
-                        break
-                    except:
+                    else:
                         self.replyRtsp(self.CON_ERR_500, seq[1])
-
+                except Exception as e:
+                    print(f"Error during scrubbing: {e}")
+                    self.replyRtsp(self.CON_ERR_500, seq[1])
+            else:
+                self.replyRtsp(self.CON_ERR_500, seq[1])
+                
+        # Handle other requests (SETUP, PLAY, PAUSE, TEARDOWN)
+        elif requestType == self.SETUP:
+            if self.state == self.INIT:
+                try:
+                    self.clientInfo['videoStream'] = VideoStream(filename)
+                    self.state = self.READY
+                    self.clientInfo['session'] = randint(100000, 999999)
+                    self.replyRtsp(self.OK_200, seq[1])
+                    self.clientInfo['rtpPort'] = request[2].split(' ')[3]
+                except IOError:
+                    self.replyRtsp(self.FILE_NOT_FOUND_404, seq[1])
+                    
+        elif requestType == self.PLAY:
+            if self.state == self.READY:
+                print("processing PLAY\n")
+                self.state = self.PLAYING
+                
+                # Create a new socket for RTP/UDP
+                self.clientInfo["rtpSocket"] = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                
+                self.replyRtsp(self.OK_200, seq[1])
+                
+                # Create a new thread and start sending RTP packets
+                self.clientInfo['event'] = threading.Event()
+                self.clientInfo['worker'] = threading.Thread(target=self.sendRtp)
+                self.clientInfo['worker'].start()
+                
+        elif requestType == self.PAUSE:
+            if self.state == self.PLAYING:
+                print("processing PAUSE\n")
+                self.state = self.READY
+                self.clientInfo['event'].set()
+                self.replyRtsp(self.OK_200, seq[1])
+                
+        elif requestType == self.TEARDOWN:
+            print("processing TEARDOWN\n")
+            self.clientInfo['event'].set()
+            self.replyRtsp(self.OK_200, seq[1])
+            self.clientInfo['rtpSocket'].close()
     def sendRtp(self):
         """Send RTP packets over UDP."""
         while True:

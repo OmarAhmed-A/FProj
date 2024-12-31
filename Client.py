@@ -151,9 +151,47 @@ class Client:
             troughcolor=BUTTON_COLOR,
             width=10
         )
+        self.scrubScale.bind("<Button-1>", self.startScrubbing)
         self.scrubScale.bind("<ButtonRelease-1>", self.handleScrub)
         self.scrubScale.grid(row=0, column=0, sticky='ew')
 
+
+
+
+    def startScrubbing(self, event):
+        if self.state not in [self.READY, self.PLAYING]:
+            return
+        self.scrubbing = True
+        if self.state == self.PLAYING:
+            self.was_playing = True
+            self.pauseMovie()
+
+    def handleScrub(self, event):
+        if self.state not in [self.READY, self.PLAYING]:
+            return
+            
+        if not self.scrubbing:  # Ignore if we weren't actually scrubbing
+            return
+            
+        try:
+            # Calculate new position
+            position = max(0, min(100, self.scrubScale.get()))
+            self.scrubValue = int(position)
+            self.expectedFrame = max(0, min(self.totalFrames, 
+                                        int((self.scrubValue / 100.0) * self.totalFrames)))
+            
+            # Clear current frame
+            self.label.configure(image='')
+            self.label.image = None
+            
+            # Reset connection and send scrub request
+            self.resetRtpConnection()
+            self.sendRtspRequest(self.SCRUB)
+        except Exception as e:
+            print("Error during scrubbing:", e)
+            self.scrubbing = False
+            if self.was_playing:
+                self.playMovie()
     def setupMovie(self):
         if self.state == self.INIT:
             self.sendRtspRequest(self.SETUP)
@@ -177,43 +215,63 @@ class Client:
             self.sendRtspRequest(self.PLAY)
 
     def handleScrub(self, event):
+        """Handles scrub bar interaction"""
         if self.state not in [self.READY, self.PLAYING]:
             return
             
+        # Store current state
         self.was_playing = (self.state == self.PLAYING)
         self.scrubbing = True
         
+        # Pause if currently playing
         if self.was_playing:
             self.pauseMovie()
         
-        position = self.scrubScale.get()
-        self.scrubValue = int(position)
-        self.expectedFrame = int((self.scrubValue / 100.0) * self.totalFrames)
-        
-        # Clear current frame
-        self.label.configure(image='')
-        self.label.image = None
-        
-        self.resetRtpConnection()
-        self.sendRtspRequest(self.SCRUB)
+        try:
+            # Calculate new position
+            position = max(0, min(100, self.scrubScale.get()))
+            self.scrubValue = int(position)
+            self.expectedFrame = max(0, min(self.totalFrames, 
+                                          int((self.scrubValue / 100.0) * self.totalFrames)))
+            
+            # Clear current frame
+            self.label.configure(image='')
+            self.label.image = None
+            
+            # Reset connection and send scrub request
+            self.resetRtpConnection()
+            self.sendRtspRequest(self.SCRUB)
+        except Exception as e:
+            print("Error during scrubbing:", e)
+            self.scrubbing = False
+            if self.was_playing:
+                self.playMovie()
 
     def resetRtpConnection(self):
-        # Properly stop the listener thread
-        if self.playEvent:
-            self.playEvent.set()
-            if self.listenerThread:
-                self.listenerThread.join()
-        # Close existing RTP socket
-        if hasattr(self, 'rtpSocket'):
-            self.rtpSocket.close()
-        self.openRtpPort()
+        """Resets the RTP connection for scrubbing"""
+        try:
+            if self.playEvent:
+                self.playEvent.set()
+                if self.listenerThread and self.listenerThread.is_alive():
+                    self.listenerThread.join(timeout=1.0)
+            
+            if hasattr(self, 'rtpSocket'):
+                try:
+                    self.rtpSocket.shutdown(socket.SHUT_RDWR)
+                except:
+                    pass
+                self.rtpSocket.close()
+            
+            self.openRtpPort()
+        except Exception as e:
+            print("Error resetting RTP connection:", e)
 
     def updateUI(self):
-        if self.state == self.PLAYING and self.totalFrames > 0:
+        """Updates the scrub bar position based on current frame"""
+        if self.state == self.PLAYING and self.totalFrames > 0 and not self.scrubbing:
             try:
-                current_position = (self.frameNbr / self.totalFrames) * 100
-                if not self.scrubbing:
-                    self.scrubScale.set(current_position)
+                current_position = min(100, max(0, (self.frameNbr / self.totalFrames) * 100))
+                self.master.after(0, self.scrubScale.set, current_position)
             except Exception as e:
                 print("Error updating UI:", e)
 
