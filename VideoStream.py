@@ -1,54 +1,42 @@
-import cv2
+from VideoConverter import VideoConverter
 import os
-import struct
-
-
 
 class VideoStream:
     def __init__(self, filename):
-        self.filename = filename
-        self.processed_file = "processed_video.mjpeg"
+        self.original_filename = filename
         self.frameNum = 0
+        self.converted_file = None
         
         try:
-            if not filename.endswith('.Mjpeg'):
-                print(f"Converting {filename} to MJPEG format...")
-                self.convert_video_to_mjpeg()
-                self.file = open(self.processed_file, 'rb')
+            # Check if file needs conversion
+            if not filename.lower().endswith(('.mjpeg', '.mjpg')):
+                print(f"Input file {filename} is not in MJPEG format. Converting...")
+                converter = VideoConverter()
+                self.converted_file = f"{os.path.splitext(filename)[0]}_converted.mjpg"
+                
+                # Perform conversion
+                result = converter.convert_video(filename, self.converted_file)
+                if result:
+                    print("Conversion successful")
+                    self.filename = self.converted_file
+                else:
+                    raise IOError("Video conversion failed")
             else:
-                self.file = open(filename, 'rb')
+                self.filename = filename
             
+            self.file = open(self.filename, 'rb')
             self.frame_positions = [0]
             self.cache_frame_positions()
             
         except Exception as e:
             print(f"Error initializing VideoStream: {e}")
+            if self.converted_file and os.path.exists(self.converted_file):
+                try:
+                    os.remove(self.converted_file)
+                except:
+                    pass
             raise IOError
         
-    def convert_video_to_mjpeg(self):
-        cap = cv2.VideoCapture(self.filename)
-        if not cap.isOpened():
-            raise IOError("Cannot open video file")
-        
-        frame_count = 0
-        with open(self.processed_file, 'wb') as outfile:
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                
-                # Convert to JPEG
-                _, jpeg_frame = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
-                frame_bytes = jpeg_frame.tobytes()
-                
-                # Write size as 5 ASCII digits (original format)
-                size_str = f"{len(frame_bytes):05d}".encode('ascii')
-                outfile.write(size_str)
-                outfile.write(frame_bytes)
-                frame_count += 1
-                
-        cap.release()
-            
     def cache_frame_positions(self):
         self.frame_positions = [0]
         self.file.seek(0)
@@ -106,7 +94,8 @@ class VideoStream:
     def __del__(self):
         try:
             self.file.close()
-            if os.path.exists(self.processed_file) and self.filename != self.processed_file:
-                os.remove(self.processed_file)
+            # Clean up converted file if it exists
+            if self.converted_file and os.path.exists(self.converted_file):
+                os.remove(self.converted_file)
         except:
             pass

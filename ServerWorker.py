@@ -150,9 +150,9 @@ class ServerWorker:
                         self.makeRtp(data, frameNumber), (address, port))    #make rtp will create packet and received packet will send to client using address and port
                 except:
                     print("Connection Error")
-                    # print('-'*60)
-                    # traceback.print_exc(file=sys.stdout)
-                    # print('-'*60)
+                    print('-'*60)
+                    traceback.print_exc(file=sys.stdout)
+                    print('-'*60)
 
     def makeRtp(self, payload, frameNbr):
         """RTP-packetize the video data."""
@@ -167,6 +167,10 @@ class ServerWorker:
 
         rtpPacket = RtpPacket()   #by RtpPacket() class, create rtp packet which consist rtp header and payload(data)
 
+        max_payload_size = 65507 - 12  # 65507 bytes is the max size for UDP, 12 bytes for RTP header
+        if len(payload) > max_payload_size:
+            payload = payload[:max_payload_size]
+        
         rtpPacket.encode(version, padding, extension, cc,
                          seqnum, marker, pt, ssrc, payload)
 
