@@ -66,15 +66,8 @@ python Server.py <server_port>
 2. Launch the client:
 
 ```bash
-python ClientLauncher.py
+python ClientLauncher.py <Server IP> <Server Port> <Client Port> <Path to video file on server>
 ```
-
-3. In the client GUI:
-   - Enter the server IP address
-   - Enter the server port number
-   - Enter the video filename to stream
-   - Use the playback controls to manage the stream
-
 ## Supported Video Controls
 
 - SETUP: Initialize stream
