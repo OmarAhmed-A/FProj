@@ -2,6 +2,7 @@ cache*
 
 *.mp4
 *.Mjpeg
+Videos
 
 
 __pycache__
