@@ -128,15 +128,6 @@ python ClientLauncher.py
 4. Push to the branch
 5. Create a new Pull Request
 
-## License
-
-[Your chosen license]
-
-## Acknowledgments
-
-- FFmpeg for video conversion capabilities
-- [Any other acknowledgments]
-
 ## Troubleshooting
 
 ### Common Issues
