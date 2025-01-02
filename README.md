@@ -1,6 +1,7 @@
 # RTSP Video Streaming Application
 
 A Python-based client-server application that implements the RTSP (Real-Time Streaming Protocol) protocol for video streaming. The application supports both MJPEG format videos directly and can automatically convert other video formats to MJPEG for streaming.
+![ScreenshotClient](https://github.com/user-attachments/assets/f8042a89-36a8-4954-b218-79ca0f5223e6)
 
 ## Features
 
